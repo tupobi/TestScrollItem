@@ -4,7 +4,6 @@ import android.content.Context;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -46,14 +45,15 @@ public class SlideItemLayout extends FrameLayout {
     }
 
 
-    private float startX, startY;
+    private float startX, startY, downX, downY;
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         super.onTouchEvent(event);
-        switch (event.getAction()){
+        switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                startX = event.getX();
-                startY = event.getY();
+                downX = startX = event.getX();
+                downY = startY = event.getY();
                 break;
             case MotionEvent.ACTION_MOVE:
                 float endX = event.getX();
@@ -65,21 +65,29 @@ public class SlideItemLayout extends FrameLayout {
 //                Log.e("toScrollX", (int) (getScrollX() - distanceX) + "");
                 int toScrollX = (int) (getScrollX() - distanceX);
                 //getScrollX一开始是0,后面-distanceX慢慢累加，distanceX会随着stratX初始化而改变。
-                if (toScrollX < 0){
+                if (toScrollX < 0) {
                     toScrollX = 0;
-                }else if (toScrollX > menuWidth){
+                } else if (toScrollX > menuWidth) {
                     toScrollX = menuWidth;
                 }
                 scrollTo(toScrollX, getScrollY());
 
                 startX = event.getX();
                 startY = event.getY();
+
+                float DX = Math.abs(endX - downX);
+                float DY = Math.abs(endY - downY);
+
+                if (DX > DY && DX >= 5) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+
                 break;
             case MotionEvent.ACTION_UP:
                 int totalScrollX = getScrollX();//偏移量
-                if (totalScrollX < menuWidth/2){
+                if (totalScrollX < menuWidth / 2) {
                     closeMenu();
-                }else {
+                } else {
                     openMenu();
                 }
                 break;
@@ -88,15 +96,51 @@ public class SlideItemLayout extends FrameLayout {
         return true;
     }
 
-    private void openMenu() {
+    /**
+     * 拦截孩子事件，但会执行onTochEvent()方法。
+     * @param event
+     * @return
+     */
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent event) {
+        boolean intercept = false;
+
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                downX = startX = event.getX();
+                if (onStateChangedListener != null){
+                    onStateChangedListener.onDown(this);
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                float endX = event.getX();
+
+                startX = event.getX();
+
+                float DX = Math.abs(endX - downX);
+
+                if (DX > 5) {
+                    intercept = true;
+                }
+
+                break;
+        }
+
+        return intercept;
+    }
+
+    public void openMenu() {
         int distanceX = menuWidth - getScrollX();
         //目标偏移量 - 起始偏移量
         scroller.startScroll(getScrollX(), getScrollY(), distanceX, getScrollY());
         //从X,Y滑到另一个X,Y
         invalidate();
+        if (onStateChangedListener != null){
+            onStateChangedListener.onOpen(this);
+        }
     }
 
-    private void closeMenu() {
+    public void closeMenu() {
         int distanceX = 0 - getScrollX();
         //目标点-起始点
         scroller.startScroll(getScrollX(), getScrollY(), distanceX, getScrollY());
@@ -105,14 +149,30 @@ public class SlideItemLayout extends FrameLayout {
 //        dx 表示滑动的距离，正值向左滑，负值向右滑。
 //        这与我们感官逻辑相反，需要注意。
         invalidate();
+
+        if (onStateChangedListener != null){
+            onStateChangedListener.onClose(this);
+        }
     }
 
     @Override
     public void computeScroll() {
         super.computeScroll();
-        if (scroller.computeScrollOffset()){
+        if (scroller.computeScrollOffset()) {
             scrollTo(scroller.getCurrX(), scroller.getCurrY());
             invalidate();
         }
+    }
+
+    public interface OnStateChangedListener{
+        void onClose(SlideItemLayout slideItemLayout);
+        void onDown(SlideItemLayout slideItemLayout);
+        void onOpen(SlideItemLayout slideItemLayout);
+    }
+
+    private OnStateChangedListener onStateChangedListener;
+
+    public void setOnStateChangedListener(OnStateChangedListener onStateChangedListener) {
+        this.onStateChangedListener = onStateChangedListener;
     }
 }
